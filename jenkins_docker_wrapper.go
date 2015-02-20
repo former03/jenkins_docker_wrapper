@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/fsouza/go-dockerclient"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"log"
@@ -16,9 +15,9 @@ type Arguments struct {
 }
 
 type Config struct {
-	secure_path           []string // Secure location to mount
-	default_shell         string
-	containers_to_cleanup []string
+	secure_path        []string // Secure location to mount
+	default_shell      string
+	cleanup_containers []string // Containers to remove at the end
 }
 
 var version = "0.0.1"
@@ -28,6 +27,11 @@ var config Config
 var args Arguments
 
 var docker_client *docker.Client
+
+// ensure cleanup of all ressources
+func cleanup() {
+	cleanup_containers()
+}
 
 // parse and validate command line arguments
 func parse_arguments() {
@@ -41,7 +45,6 @@ func parse_arguments() {
 	if *args.debug {
 		log.Printf("debug mode enabled")
 	}
-	fmt.Printf("Would image_name: %s\n", *args.image_name)
 }
 
 // parse and validate local config
@@ -55,7 +58,7 @@ func connect_docker() *docker.Client {
 	client, _ := docker.NewClient(endpoint)
 	version, err := client.Version()
 	if err != nil {
-		log.Fatalf("Docker connection not successful: %s", err)
+		log.Panicf("Docker connection not successful: %s", err)
 	}
 	if *args.debug {
 		log.Printf("Docker connection successful. server version: %s\n", version.Get("Version"))
@@ -66,10 +69,18 @@ func connect_docker() *docker.Client {
 // container error message
 func handle_error_container(msg string, id string, err error) {
 	if err != nil {
-		log.Fatalf("Docker %s container (id=%s) not successful: %s", msg, id, err)
+		log.Panicf("Docker %s container (id=%s) not successful: %s", msg, id, err)
 	}
 	if *args.debug {
 		log.Printf("Docker %s container (id=%s) successful", msg, id)
+	}
+}
+
+// cleanup containers
+func cleanup_containers() {
+	for _, id := range config.cleanup_containers {
+		err := remove_container(id)
+		handle_error_container("removal of", id, err)
 	}
 }
 
@@ -79,14 +90,14 @@ func run_container(command []string) (returncode int) {
 	// create
 	container, err := create_container(command)
 	if err != nil {
-		log.Fatalf("Docker creation of container not successful: %s", err)
+		log.Panicf("Docker creation of container not successful: %s", err)
 	}
 	if *args.debug {
 		handle_error_container("creation of", container.ID, err)
 	}
 
-	// ensure removal of container
-	defer remove_container(container.ID)
+	// add container for removal
+	config.cleanup_containers = append(config.cleanup_containers, container.ID)
 
 	// start container
 	err = docker_client.StartContainer(container.ID, get_host_config())
@@ -149,17 +160,18 @@ func attach_to_container(id string) (err error) {
 func remove_container(id string) (err error) {
 	var opts docker.RemoveContainerOptions
 	opts.ID = id
-	handle_error_container("removal of", id, err)
 	return docker_client.RemoveContainer(opts)
 }
 
 // set default config
 func set_default_config() {
 	config.default_shell = "/bin/bash"
+	config.cleanup_containers = []string{}
 }
 
 // main function
 func main() {
+	defer cleanup()
 
 	set_default_config()
 
