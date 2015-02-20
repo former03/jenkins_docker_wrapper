@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/docker/docker/api/client"
 	"github.com/fsouza/go-dockerclient"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"log"
@@ -173,11 +174,16 @@ func set_default_config() {
 func main() {
 	defer cleanup()
 
-	set_default_config()
+	cli := client.NewDockerCli(os.Stdin, os.Stdout, os.Stderr, "no", "unix", "/var/run/docker.sock", nil)
+	err := cli.CmdRun("-t", "-i", "--rm", "ubuntu", "/bin/bash")
+	log.Printf("%s", err)
+	/*
+		set_default_config()
 
-	parse_arguments()
+		parse_arguments()
 
-	docker_client = connect_docker()
+		docker_client = connect_docker()
 
-	run_container([]string{config.default_shell})
+		run_container([]string{config.default_shell})
+	*/
 }
