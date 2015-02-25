@@ -1,10 +1,11 @@
 package main
 
 import (
+	log "github.com/Sirupsen/logrus"
 	"github.com/fsouza/go-dockerclient"
 	"gopkg.in/alecthomas/kingpin.v1"
-	"log"
 	"os"
+	"path/filepath"
 )
 
 type Arguments struct {
@@ -15,6 +16,9 @@ type Arguments struct {
 }
 
 type Config struct {
+	my_args            []string // Arguments for me
+	container_args     []string // Arguments for the container shell
+	basename           string   // Base name of executable
 	secure_path        []string // Secure location to mount
 	default_shell      string
 	cleanup_containers []string // Containers to remove at the end
@@ -33,18 +37,52 @@ func cleanup() {
 	cleanup_containers()
 }
 
-// parse and validate command line arguments
-func parse_arguments() {
-	args.debug = kingpin.Flag("debug", "Enable debug mode.").Short('d').Bool()
-	args.projekt_conf = kingpin.Flag("projekt_conf", "Parse projekt.conf for image name.").Short('p').Bool()
-	args.image_name = kingpin.Flag("image_name", "Image name of docker image.").Short('i').String()
-	args.no_rm = kingpin.Flag("no_rm", "Don't remove container after execution.").Short('n').Bool()
-
-	kingpin.Version(version)
-	kingpin.Parse()
-	if *args.debug {
-		log.Printf("debug mode enabled")
+// split up command line arguments
+func split_arguments(basename string, cli_args []string) (my []string, container []string) {
+	seperator := "--"
+	seperator_pos := -1
+	for index, elem := range cli_args {
+		if elem == seperator {
+			seperator_pos = index
+			break
+		}
 	}
+	if seperator_pos >= 0 {
+		log.Debugf("Found seperator '%s' on position=%d", seperator, seperator_pos)
+		my = cli_args[0:seperator_pos]
+		container = cli_args[seperator_pos+1:]
+	} else {
+		my = []string{}
+		container = cli_args
+	}
+	log.Debugf("My arguments       : %s", my)
+	log.Debugf("Container arguments: %s", container)
+	return my, container
+}
+
+// parse and validate command line arguments
+func parse_arguments(basename string, cli_args []string) Arguments {
+
+	var args Arguments
+
+	parser := kingpin.New(basename, "")
+
+	args.debug = parser.Flag("debug", "Enable debug mode.").Short('d').Bool()
+	args.projekt_conf = parser.Flag("projekt_conf", "Parse projekt.conf for image name.").Short('p').Bool()
+	args.image_name = parser.Flag("image_name", "Image name of docker image.").Short('i').String()
+	args.no_rm = parser.Flag("no_rm", "Don't remove container after execution.").Short('n').Bool()
+
+	parser.Version(version)
+	parser.Parse(cli_args)
+
+	log.Debugf("image=%s", *args.image_name)
+	log.Debugf("args=%s", cli_args)
+
+	if *args.debug {
+		log.SetLevel(log.DebugLevel)
+	}
+
+	return args
 }
 
 // parse and validate local config
@@ -60,9 +98,7 @@ func connect_docker() *docker.Client {
 	if err != nil {
 		log.Panicf("Docker connection not successful: %s", err)
 	}
-	if *args.debug {
-		log.Printf("Docker connection successful. server version: %s\n", version.Get("Version"))
-	}
+	log.Debugf("Docker connection successful. server version: %s\n", version.Get("Version"))
 	return client
 }
 
@@ -71,9 +107,7 @@ func handle_error_container(msg string, id string, err error) {
 	if err != nil {
 		log.Panicf("Docker %s container (id=%s) not successful: %s", msg, id, err)
 	}
-	if *args.debug {
-		log.Printf("Docker %s container (id=%s) successful", msg, id)
-	}
+	log.Debugf("Docker %s container (id=%s) successful", msg, id)
 }
 
 // cleanup containers
@@ -92,9 +126,7 @@ func run_container(command []string) (returncode int) {
 	if err != nil {
 		log.Panicf("Docker creation of container not successful: %s", err)
 	}
-	if *args.debug {
-		handle_error_container("creation of", container.ID, err)
-	}
+	handle_error_container("creation of", container.ID, err)
 
 	// add container for removal
 	config.cleanup_containers = append(config.cleanup_containers, container.ID)
@@ -138,6 +170,7 @@ func create_container(cmd []string) (container *docker.Container, err error) {
 	copts.Config = &c_config
 	copts.HostConfig = host_config
 
+	log.Debugf("Create options image=%s command=%s", c_config.Image, c_config.Cmd)
 	return docker_client.CreateContainer(copts)
 }
 
@@ -164,18 +197,32 @@ func remove_container(id string) (err error) {
 }
 
 // set default config
-func set_default_config() {
+func initialize() {
+
+	// set log level
+	log.SetLevel(log.DebugLevel)
+
+	// set default shell to bash
 	config.default_shell = "/bin/bash"
+
 	config.cleanup_containers = []string{}
+
+	// get basename of me
+	config.basename = filepath.Base(os.Args[0])
+
+	// split arguments
+	config.my_args, config.container_args = split_arguments(config.basename, os.Args[1:])
+
+	// parse my arguments
+	args = parse_arguments(config.basename, config.my_args)
+
 }
 
 // main function
 func main() {
 	defer cleanup()
 
-	set_default_config()
-
-	parse_arguments()
+	initialize()
 
 	docker_client = connect_docker()
 
