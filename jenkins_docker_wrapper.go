@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/fsouza/go-dockerclient"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Arguments struct {
@@ -21,6 +24,8 @@ type Config struct {
 	basename           string   // Base name of executable
 	secure_path        []string // Secure location to mount
 	default_shell      string
+	jenkins_user       string
+	jenkins_workspace  string
 	cleanup_containers []string // Containers to remove at the end
 }
 
@@ -37,16 +42,46 @@ func cleanup() {
 	cleanup_containers()
 }
 
+// parse cli arguments
+func parse_arguments(in_args []string) {
+	// get basename of me
+	config.basename = filepath.Base(in_args[0])
+
+	// split arguments
+	config.my_args, config.container_args = split_arguments(config.basename, in_args[1:])
+
+	// parse my arguments
+	args = parse_my_arguments(config.basename, config.my_args)
+}
+
+// test if legacy parser is needed
+func parse_arguments_legacy(basename string) bool {
+	if basename == "jenkins_docker_run" {
+		return true
+	}
+	return false
+}
+
 // split up command line arguments
 func split_arguments(basename string, cli_args []string) (my []string, container []string) {
 	seperator := "--"
 	seperator_pos := -1
-	for index, elem := range cli_args {
-		if elem == seperator {
-			seperator_pos = index
-			break
+	legacy_my_args := []string{}
+	legacy := parse_arguments_legacy(basename)
+
+	// handle legacy arguments
+	if legacy {
+		legacy_my_args = append(legacy_my_args, cli_args[0])
+		seperator_pos = 0
+	} else {
+		for index, elem := range cli_args {
+			if elem == seperator {
+				seperator_pos = index
+				break
+			}
 		}
 	}
+
 	if seperator_pos >= 0 {
 		log.Debugf("Found seperator '%s' on position=%d", seperator, seperator_pos)
 		my = cli_args[0:seperator_pos]
@@ -55,13 +90,18 @@ func split_arguments(basename string, cli_args []string) (my []string, container
 		my = []string{}
 		container = cli_args
 	}
+
+	if legacy {
+		my = legacy_my_args
+	}
+
 	log.Debugf("My arguments       : %s", my)
 	log.Debugf("Container arguments: %s", container)
 	return my, container
 }
 
-// parse and validate command line arguments
-func parse_arguments(basename string, cli_args []string) Arguments {
+// parse and validate my command line arguments
+func parse_my_arguments(basename string, cli_args []string) Arguments {
 
 	var args Arguments
 
@@ -72,17 +112,98 @@ func parse_arguments(basename string, cli_args []string) Arguments {
 	args.image_name = parser.Flag("image_name", "Image name of docker image.").Short('i').String()
 	args.no_rm = parser.Flag("no_rm", "Don't remove container after execution.").Short('n').Bool()
 
+	if parse_arguments_legacy(basename) {
+		args.image_name = &cli_args[0]
+		cli_args = []string{}
+	}
+
 	parser.Version(version)
 	parser.Parse(cli_args)
-
-	log.Debugf("image=%s", *args.image_name)
-	log.Debugf("args=%s", cli_args)
 
 	if *args.debug {
 		log.SetLevel(log.DebugLevel)
 	}
 
 	return args
+}
+
+func build_environment_blacklist(key string, value string) (additional []string, err error) {
+	return []string{}, nil
+}
+
+func build_environment_validate_user(key string, value string) (additional []string, err error) {
+	if value == config.jenkins_user {
+		return []string{fmt.Sprintf("%s=%s", key, value)}, err
+	}
+	err = errors.New(fmt.Sprintf("Invalid user environment '%s', expect to be '%s'", value, config.jenkins_user))
+	return []string{}, err
+}
+
+func build_environment_validate_workspace(key string, value string) (additional []string, err error) {
+
+	if !filepath.IsAbs(value) {
+		err := errors.New(fmt.Sprintf("Invalid path in %s '%s', expected to be absolute path", key, value))
+		return []string{}, err
+	}
+
+	path, err := filepath.Abs(value)
+	if err != nil {
+		return []string{}, err
+	}
+
+	if !strings.HasPrefix(path, config.jenkins_workspace) {
+		err := errors.New(fmt.Sprintf("Invalid path in %s '%s', expected to be within %s", key, path, config.jenkins_workspace))
+		return []string{}, err
+	}
+
+	return []string{fmt.Sprintf("%s=%s", key, path)}, err
+}
+
+// filter and check environment
+func build_environment(env []string) (output []string, err error) {
+
+	output = []string{}
+
+	// create handler map
+	var m map[string]func(string, string) ([]string, error)
+	m = make(map[string]func(string, string) ([]string, error))
+
+	// blacklist following keys
+	m["SSH_CLIENT"] = build_environment_blacklist
+	m["SSH_CONNECTION"] = build_environment_blacklist
+
+	// validations
+	m["USER"] = build_environment_validate_user
+	m["PWD"] = build_environment_validate_workspace
+	m["WORKSPACE"] = build_environment_validate_workspace
+
+	for _, env_elem := range env {
+
+		// split environment
+		env_split := strings.SplitN(env_elem, "=", 2)
+		if len(env_split) != 2 {
+			log.Warnf("Can't parse env: %s", env_elem)
+			continue
+		}
+		key, value := env_split[0], env_split[1]
+
+		//.check if key has handler
+		if val, ok := m[key]; ok {
+			additional, err := val(key, value)
+			if err != nil {
+				return []string{}, err
+			}
+			// if addtional env variable exists add it
+			if len(additional) > 0 {
+				output = append(output, additional...)
+			}
+			continue
+		}
+
+		// add to output
+		output = append(output, fmt.Sprintf("%s=%s", key, value))
+	}
+	return output, err
 }
 
 // parse and validate local config
@@ -204,17 +325,14 @@ func initialize() {
 
 	// set default shell to bash
 	config.default_shell = "/bin/bash"
+	config.jenkins_user = "jenkins"
+	config.jenkins_workspace = "/jenkins/workspace"
 
 	config.cleanup_containers = []string{}
 
-	// get basename of me
-	config.basename = filepath.Base(os.Args[0])
+	parse_arguments(os.Args)
 
-	// split arguments
-	config.my_args, config.container_args = split_arguments(config.basename, os.Args[1:])
-
-	// parse my arguments
-	args = parse_arguments(config.basename, config.my_args)
+	build_environment(os.Environ())
 
 }
 
