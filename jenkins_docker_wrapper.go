@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
-	"github.com/fsouza/go-dockerclient"
 	"github.com/simonswine/docker_wrapper"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"os"
@@ -40,8 +39,6 @@ var version = "0.0.1"
 var config Config
 
 var args Arguments
-
-var docker_client *docker.Client
 
 // ensure cleanup of all ressources
 func cleanup() {
