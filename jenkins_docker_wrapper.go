@@ -8,6 +8,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v1"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -21,9 +22,12 @@ type Arguments struct {
 type Config struct {
 	my_args            []string // Arguments for me
 	container_args     []string // Arguments for the container shell
+	files_to_copy      []string // Files to copy to the container
 	basename           string   // Base name of executable
 	secure_path        []string // Secure location to mount
 	default_shell      string
+	job_name           string
+	build_id           int
 	jenkins_user       string
 	jenkins_workspace  string
 	cleanup_containers []string // Containers to remove at the end
@@ -159,6 +163,33 @@ func build_environment_validate_workspace(key string, value string) (additional 
 	return []string{fmt.Sprintf("%s=%s", key, path)}, err
 }
 
+func build_environment_validate_ssh_auth_sock(key string, value string) (additional []string, err error) {
+
+	if !filepath.IsAbs(value) {
+		err := errors.New(fmt.Sprintf("Invalid path in %s '%s', expected to be absolute path", key, value))
+		return []string{}, err
+	}
+
+	// append ssh socket to copy slice
+	config.files_to_copy = append(config.files_to_copy, value)
+
+	return []string{fmt.Sprintf("%s=%s", key, value)}, err
+}
+
+func build_environment_store_build_id(key string, value string) (additional []string, err error) {
+	i, err := strconv.Atoi(value)
+	if err != nil {
+		return []string{}, nil
+	}
+	config.build_id = i
+	return []string{fmt.Sprintf("%s=%s", key, value)}, err
+}
+
+func build_environment_store_job_name(key string, value string) (additional []string, err error) {
+	config.job_name = value
+	return []string{fmt.Sprintf("%s=%s", key, value)}, err
+}
+
 // filter and check environment
 func build_environment(env []string) (output []string, err error) {
 
@@ -171,11 +202,21 @@ func build_environment(env []string) (output []string, err error) {
 	// blacklist following keys
 	m["SSH_CLIENT"] = build_environment_blacklist
 	m["SSH_CONNECTION"] = build_environment_blacklist
+	m["LD_LIBRARY_PATH"] = build_environment_blacklist
 
 	// validations
 	m["USER"] = build_environment_validate_user
 	m["PWD"] = build_environment_validate_workspace
 	m["WORKSPACE"] = build_environment_validate_workspace
+
+	// validate and move into container
+	m["SSH_AUTH_SOCK"] = build_environment_validate_ssh_auth_sock
+
+	// store build id
+	m["BUILD_ID"] = build_environment_store_build_id
+
+	// store project name
+	m["JOB_NAME"] = build_environment_store_job_name
 
 	for _, env_elem := range env {
 
