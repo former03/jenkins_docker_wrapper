@@ -5,6 +5,7 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/fsouza/go-dockerclient"
+	"github.com/simonswine/docker_wrapper"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"os"
 	"path/filepath"
@@ -30,7 +31,8 @@ type Config struct {
 	build_id           int
 	jenkins_user       string
 	jenkins_workspace  string
-	cleanup_containers []string // Containers to remove at the end
+	cleanup_containers []string                        // Containers to remove at the end
+	wrappers           *[]docker_wrapper.DockerWrapper // Docker wrappers
 }
 
 var version = "0.0.1"
@@ -43,7 +45,6 @@ var docker_client *docker.Client
 
 // ensure cleanup of all ressources
 func cleanup() {
-	cleanup_containers()
 }
 
 // parse cli arguments
@@ -252,166 +253,6 @@ func parse_config() {
 
 }
 
-// connect to docker
-func connect_docker() *docker.Client {
-	endpoint := "unix:///var/run/docker.sock"
-	client, _ := docker.NewClient(endpoint)
-	version, err := client.Version()
-	if err != nil {
-		log.Panicf("Docker connection not successful: %s", err)
-	}
-	log.Debugf("Docker connection successful. server version: %s\n", version.Get("Version"))
-	return client
-}
-
-// container error message
-func handle_error_container(msg string, id string, err error) {
-	if err != nil {
-		log.Panicf("Docker %s container (id=%s) not successful: %s", msg, id, err)
-	}
-	log.Debugf("Docker %s container (id=%s) successful", msg, id)
-}
-
-// cleanup containers
-func cleanup_containers() {
-	for _, id := range config.cleanup_containers {
-		err := remove_container(id)
-		handle_error_container("removal of", id, err)
-	}
-}
-
-func run_cmd_container(command []string, cid string) {
-	// prepare container
-	create_config := docker.CreateExecOptions{
-		Container:    cid,
-		AttachStdin:  false,
-		AttachStdout: true,
-		AttachStderr: true,
-		Tty:          false,
-		Cmd:          command,
-	}
-	execObj, err := docker_client.CreateExec(create_config)
-	if err != nil {
-		log.Fatal(err)
-	}
-	start_config := docker.StartExecOptions{}
-	err = docker_client.StartExec(execObj.ID, start_config)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-// run a container
-func run_container(command []string) (returncode int) {
-
-	// create
-	container, err := create_container(command)
-	if err != nil {
-		log.Panicf("Docker creation of container not successful: %s", err)
-	}
-	handle_error_container("creation of", container.ID, err)
-
-	// add container for removal
-	config.cleanup_containers = append(config.cleanup_containers, container.ID)
-
-	// start container
-	err = docker_client.StartContainer(container.ID, get_host_config())
-	handle_error_container("start of", container.ID, err)
-
-	run_cmd_container(
-		[]string{"groupadd", "-g", "1000", "jenkins"},
-		container.ID,
-	)
-	run_cmd_container(
-		[]string{"useradd", "-g", "1000", "-d", "/jenkins", "jenkins"},
-		container.ID,
-	)
-
-	create_config := docker.CreateExecOptions{
-		Container:    container.ID,
-		AttachStdin:  true,
-		AttachStdout: true,
-		AttachStderr: true,
-		Tty:          true,
-		Cmd:          []string{"su", "-c", "/bin/bash", "jenkins"},
-	}
-	execObj, err := docker_client.CreateExec(create_config)
-	if err != nil {
-		log.Fatal(err)
-	}
-	start_config := docker.StartExecOptions{
-		InputStream:  os.Stdin,
-		OutputStream: os.Stdout,
-		ErrorStream:  os.Stderr,
-		Detach:       false,
-		RawTerminal:  true,
-		Tty:          true,
-	}
-	err = docker_client.StartExec(execObj.ID, start_config)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// attach to container
-	//err = attach_to_container(container.ID)
-	//handle_error_container("attachment of", container.ID, err)
-
-	// stop container
-	docker_client.StopContainer(container.ID, 2)
-
-	// wait for container
-	returncode, _ = docker_client.WaitContainer(container.ID)
-	return returncode
-
-}
-
-// generate host config
-func get_host_config() *docker.HostConfig {
-	var config docker.HostConfig
-	config.RestartPolicy = docker.NeverRestart()
-	return &config
-}
-
-// create the container
-func create_container(cmd []string) (container *docker.Container, err error) {
-	var c_config docker.Config
-	c_config.Image = *args.image_name
-	c_config.Cmd = []string{"cat"}
-	c_config.Tty = true
-	c_config.OpenStdin = true
-
-	host_config := get_host_config()
-
-	var copts docker.CreateContainerOptions
-	copts.Name = "testcontainer1"
-	copts.Config = &c_config
-	copts.HostConfig = host_config
-
-	log.Debugf("Create options image=%s command=%s", c_config.Image, c_config.Cmd)
-	return docker_client.CreateContainer(copts)
-}
-
-// attach to a container
-func attach_to_container(id string) (err error) {
-	var opts docker.AttachToContainerOptions
-	opts.Container = id
-	opts.Stdin = true
-	opts.Stdout = true
-	opts.Stderr = true
-	opts.InputStream = os.Stdin
-	opts.OutputStream = os.Stdout
-	opts.ErrorStream = os.Stderr
-	opts.Stream = true
-	opts.RawTerminal = true
-	return docker_client.AttachToContainer(opts)
-}
-
-// remove a container
-func remove_container(id string) (err error) {
-	var opts docker.RemoveContainerOptions
-	opts.ID = id
-	return docker_client.RemoveContainer(opts)
-}
-
 // set default config
 func initialize() {
 
@@ -437,7 +278,11 @@ func main() {
 
 	initialize()
 
-	docker_client = connect_docker()
+	dw, err := docker_wrapper.New()
+	if err != nil {
+		log.Panic(err)
+	}
+	dw.ImageName = *args.image_name
+	dw.Run([]string{"/bin/bash"})
 
-	run_container([]string{config.default_shell})
 }
