@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+// helper to find string in slice
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
+
 // Tests new arguments with -- as seperator
 func TestArgumentsNew(t *testing.T) {
 
@@ -62,12 +72,7 @@ func TestArgumentsLegacy(t *testing.T) {
 }
 
 // Tests old style arguments
-func TestEnvrionmentBuild(t *testing.T) {
-
-	valid_path := "/jenkins/workspace"
-	valid_user := "jenkins"
-	config.jenkins_user = valid_user
-	config.jenkins_workspace = valid_path
+func TestEnvironmentBuildBlacklist(t *testing.T) {
 
 	env, err := build_environment([]string{
 		"NORMAL=vaLUE",
@@ -82,8 +87,13 @@ func TestEnvrionmentBuild(t *testing.T) {
 		env,
 		"Blacklisted env vars are not filtered correctly",
 	)
+}
 
-	env, err = build_environment([]string{
+func TestEnvironmentBuildUser(t *testing.T) {
+	valid_user := "jenkins"
+	config.jenkins_user = valid_user
+
+	env, err := build_environment([]string{
 		fmt.Sprintf("USER=%s", valid_user),
 	})
 	assert.Equal(t, nil, err, "Doesn't return a error")
@@ -106,11 +116,16 @@ func TestEnvrionmentBuild(t *testing.T) {
 		env,
 		"Error build has to return empty array",
 	)
+}
+
+func TestEnvironmentBuildWorkspace(t *testing.T) {
+	valid_path := "/jenkins/workspace"
+	config.jenkins_workspace = valid_path
 
 	// Validate workspace pwd directory
 	for _, key := range []string{"PWD", "WORKSPACE"} {
 
-		env, err = build_environment([]string{
+		env, err := build_environment([]string{
 			fmt.Sprintf("%s=%s/kunde1", key, valid_path),
 		})
 		assert.Equal(t, nil, err, "Do not return a error")
@@ -182,4 +197,80 @@ func TestEnvrionmentBuild(t *testing.T) {
 			"Error path has to be absoulte",
 		)
 	}
+}
+
+func TestEnvironmentBuildSshAuthSock(t *testing.T) {
+	key := "SSH_AUTH_SOCK"
+	value := "/tmp/jenkins8342300640468645602.jnr"
+	env, err := build_environment([]string{
+		fmt.Sprintf("%s=%s", key, value),
+	})
+	assert.Equal(t, nil, err, "Do not return a error")
+	assert.Equal(
+		t,
+		[]string{
+			fmt.Sprintf("%s=%s", key, value),
+		},
+		env,
+		"Error path has to be within the workspace",
+	)
+	assert.Equal(t, true, stringInSlice(value, config.files_to_copy), "Path is not copied to the container copy list")
+
+	env, err = build_environment([]string{
+		fmt.Sprintf("%s=relative/%s", key, value),
+	})
+	assert.NotEqual(t, nil, err, "Do not accept relative paths")
+	assert.Equal(
+		t,
+		[]string{},
+		env,
+		"Error path must be removed frome env",
+	)
+}
+
+func TestEnvironmentBuildBuildId(t *testing.T) {
+	key := "BUILD_ID"
+	value_i := 123
+	env, err := build_environment([]string{
+		fmt.Sprintf("%s=%d", key, value_i),
+	})
+	assert.Equal(t, nil, err, "Do not return a error")
+	assert.Equal(
+		t,
+		[]string{
+			fmt.Sprintf("%s=%d", key, value_i),
+		},
+		env,
+		"Correct build_id has to be in env",
+	)
+	assert.Equal(t, value_i, config.build_id, "build_id is not copied to config")
+
+	env, err = build_environment([]string{
+		fmt.Sprintf("%s=abc", key),
+	})
+	assert.Equal(t, nil, err, "False error returned")
+	assert.Equal(
+		t,
+		[]string{},
+		env,
+		"Incorrect build_id is in env",
+	)
+}
+
+func TestEnvironmentBuildJobName(t *testing.T) {
+	key := "JOB_NAME"
+	value := "kunden-datev-magazin_-_wordpress_magazin_cs_temp"
+	env, err := build_environment([]string{
+		fmt.Sprintf("%s=%s", key, value),
+	})
+	assert.Equal(t, nil, err, "Do not return a error")
+	assert.Equal(
+		t,
+		[]string{
+			fmt.Sprintf("%s=%s", key, value),
+		},
+		env,
+		"job_name has to be in env",
+	)
+	assert.Equal(t, value, config.job_name, "job_name is not copied to config")
 }
