@@ -280,6 +280,27 @@ func cleanup_containers() {
 	}
 }
 
+func run_cmd_container(command []string, cid string) {
+	// prepare container
+	create_config := docker.CreateExecOptions{
+		Container:    cid,
+		AttachStdin:  false,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          false,
+		Cmd:          command,
+	}
+	execObj, err := docker_client.CreateExec(create_config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	start_config := docker.StartExecOptions{}
+	err = docker_client.StartExec(execObj.ID, start_config)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // run a container
 func run_container(command []string) (returncode int) {
 
@@ -297,9 +318,42 @@ func run_container(command []string) (returncode int) {
 	err = docker_client.StartContainer(container.ID, get_host_config())
 	handle_error_container("start of", container.ID, err)
 
+	run_cmd_container(
+		[]string{"groupadd", "-g", "1000", "jenkins"},
+		container.ID,
+	)
+	run_cmd_container(
+		[]string{"useradd", "-g", "1000", "-d", "/jenkins", "jenkins"},
+		container.ID,
+	)
+
+	create_config := docker.CreateExecOptions{
+		Container:    container.ID,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          true,
+		Cmd:          []string{"su", "-c", "/bin/bash", "jenkins"},
+	}
+	execObj, err := docker_client.CreateExec(create_config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	start_config := docker.StartExecOptions{
+		InputStream:  os.Stdin,
+		OutputStream: os.Stdout,
+		ErrorStream:  os.Stderr,
+		Detach:       false,
+		RawTerminal:  true,
+		Tty:          true,
+	}
+	err = docker_client.StartExec(execObj.ID, start_config)
+	if err != nil {
+		log.Fatal(err)
+	}
 	// attach to container
-	err = attach_to_container(container.ID)
-	handle_error_container("attachment of", container.ID, err)
+	//err = attach_to_container(container.ID)
+	//handle_error_container("attachment of", container.ID, err)
 
 	// stop container
 	docker_client.StopContainer(container.ID, 2)
@@ -321,7 +375,7 @@ func get_host_config() *docker.HostConfig {
 func create_container(cmd []string) (container *docker.Container, err error) {
 	var c_config docker.Config
 	c_config.Image = *args.image_name
-	c_config.Cmd = cmd
+	c_config.Cmd = []string{"cat"}
 	c_config.Tty = true
 	c_config.OpenStdin = true
 
