@@ -279,7 +279,15 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	dw.ImageName = *args.image_name
-	dw.Run([]string{"/bin/bash"})
 
+	dw.ImageName = *args.image_name
+	// Starting the docker container
+	err = dw.Run()
+	if err != nil {
+		log.Fatalf("Docker error: %s", err)
+	}
+
+	stdout, stderr, ret_val, _ := dw.RunCommand([]string{"groupadd", "-g", "1000", "jenkins"})
+	stdout, stderr, ret_val, _ = dw.RunCommand([]string{"useradd", "-d", "/jenkins", "-g", "1000", "-u", "1000", "jenkins"})
+	fmt.Printf("stdout=%s stderr=%s ret_val=%d", stdout, stderr, ret_val)
 }
