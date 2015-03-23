@@ -379,6 +379,102 @@ func initialize() error {
 
 }
 
+// run command
+func run_command(dw *docker_wrapper.DockerWrapper, command []string) (string, string, int, error) {
+	stdout, stderr, ret_val, err := dw.RunCommand(command)
+	log.Debugf("running command=%v ret_val=%d stdout=%s stderr=%s", command, ret_val, stdout, stderr)
+	return stdout, stderr, ret_val, err
+}
+
+func run_command_expect(dw *docker_wrapper.DockerWrapper, command []string, expect int) (string, string, int, error) {
+	stdout, stderr, ret_val, err := run_command(dw, command)
+	if ret_val != expect {
+		msg := fmt.Sprintf("expected ret_val is %d but received %d command %v ", expect, ret_val, command)
+		log.Warn(msg)
+		return stdout, stderr, ret_val, errors.New(msg)
+	}
+	return stdout, stderr, ret_val, err
+}
+
+func init_container(dw *docker_wrapper.DockerWrapper) error {
+	jenkins_home_path := "/jenkins"
+	ssh_dir_path := filepath.Join(jenkins_home_path, ".ssh")
+	ssh_known_hosts_path := filepath.Join(ssh_dir_path, "known_hosts")
+
+	gid := 1000
+	uid := 1000
+	user := "jenkins"
+	group := "jenkins"
+
+	user_group := fmt.Sprintf("%s:%s", user, group)
+	uid_str := fmt.Sprintf("%d", uid)
+	gid_str := fmt.Sprintf("%d", gid)
+
+	// remove existing user
+	stdout, _, ret_val, _ := run_command(dw, []string{"getent", "passwd", gid_str})
+	if ret_val == 0 {
+		lines := strings.Split(strings.TrimSpace(stdout), "\n")
+		for i := range lines {
+			user := strings.Split(lines[i], ":")
+			log.Infof("Remove user '%s'", user[0])
+			_, _, _, err := run_command_expect(dw, []string{"userdel", user[0]}, 0)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// remove existing group
+	stdout, _, ret_val, _ = run_command(dw, []string{"getent", "group", gid_str})
+	if ret_val == 0 {
+		lines := strings.Split(strings.TrimSpace(stdout), "\n")
+		for i := range lines {
+			group := strings.Split(lines[i], ":")
+			log.Infof("Remove group '%s'", group[0])
+			_, _, _, err := run_command_expect(dw, []string{"groupdel", group[0]}, 0)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// add group
+	_, _, _, err := run_command_expect(dw, []string{"groupadd", "-g", gid_str, group}, 0)
+	if err != nil {
+		return err
+	}
+
+	// add user
+	_, _, _, err = run_command_expect(dw, []string{"useradd", "-d", jenkins_home_path, "-g", gid_str, "-u", uid_str, user}, 0)
+	if err != nil {
+		return err
+	}
+
+	// resets sudoers file
+	_, _, _, err = run_command_expect(dw, []string{"sh", "-c", "echo \"root ALL=(ALL:ALL) ALL\" > /etc/sudoers"}, 0)
+	if err != nil {
+		return err
+	}
+
+	// move ssh known hosts file
+	_, _, _, err = run_command_expect(dw, []string{"mkdir", "-p", ssh_dir_path}, 0)
+	if err != nil {
+		return err
+	}
+	_, _, _, err = run_command_expect(dw, []string{"mv", "/tmp/known_hosts", ssh_known_hosts_path}, 0)
+	if err != nil {
+		return err
+	}
+
+	// reset rights in jenkins home
+	_, _, _, err = run_command_expect(dw, []string{"chown", "-R", user_group, jenkins_home_path}, 0)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 // main function
 func main() {
 	defer cleanup()
@@ -403,66 +499,18 @@ func main() {
 		log.Fatalf("Docker error: %s", err)
 	}
 
-	jenkins_home_path := "/jenkins"
-	ssh_dir_path := filepath.Join(jenkins_home_path, ".ssh")
-	ssh_known_hosts_path := filepath.Join(ssh_dir_path, "known_hosts")
-
-	gid := 1000
-	uid := 1000
-	user := "jenkins"
-	group := "jenkins"
-
-	user_group := fmt.Sprintf("%s:%s", user, group)
-	uid_str := fmt.Sprintf("%d", uid)
-	gid_str := fmt.Sprintf("%d", gid)
-
-	// remove existing user
-	stdout, stderr, ret_val, _ := dw.RunCommand([]string{"getent", "passwd", gid_str})
-	fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-	if ret_val == 0 {
-		lines := strings.Split(strings.TrimSpace(stdout), "\n")
-		for i := range lines {
-			user := strings.Split(lines[i], ":")
-			log.Debugf("Remove user '%s'", user[0])
-			stdout, stderr, ret_val, _ = dw.RunCommand([]string{"userdel", user[0]})
-			fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-		}
-	}
-	// remove existing group
-	stdout, stderr, ret_val, _ = dw.RunCommand([]string{"getent", "group", gid_str})
-	fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-	if ret_val == 0 {
-		lines := strings.Split(strings.TrimSpace(stdout), "\n")
-		for i := range lines {
-			group := strings.Split(lines[i], ":")
-			log.Debugf("Remove group '%s'", group[0])
-			stdout, stderr, ret_val, _ = dw.RunCommand([]string{"groupdel", group[0]})
-			fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-		}
+	err = init_container(dw)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	stdout, stderr, ret_val, _ = dw.RunCommand([]string{"groupadd", "-g", gid_str, group})
-	fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-
-	stdout, stderr, ret_val, _ = dw.RunCommand([]string{"useradd", "-d", jenkins_home_path, "-g", gid_str, "-u", uid_str, user})
-	fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-
-	// resets sudoers file
-	stdout, stderr, ret_val, _ = dw.RunCommand([]string{"sh", "-c", "echo \"root ALL=(ALL:ALL) ALL\" > /etc/sudoers"})
-	fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-
-	// move sudoers file
-	stdout, stderr, ret_val, _ = dw.RunCommand([]string{"mkdir", "-p", ssh_dir_path})
-	fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-	stdout, stderr, ret_val, _ = dw.RunCommand([]string{"mv", "/tmp/known_hosts", ssh_known_hosts_path})
-	fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-	stdout, stderr, ret_val, _ = dw.RunCommand([]string{"chown", "-R", user_group, ssh_dir_path})
-	fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
-
-	// TODO: add variables
+	// call jenkins script
 	command := []string{"sudo", "-E", "-u", "jenkins", "bash"}
 	command = append(command, config.container_args...)
-	dw.RunCommandAttach(command, false)
-	//fmt.Printf("stdout=%s stderr=%s ret_val=%d\n", stdout, stderr, ret_val)
+	ret_val, err := dw.RunCommandAttach(command, false)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 
 }
