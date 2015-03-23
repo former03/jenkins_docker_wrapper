@@ -1,15 +1,11 @@
 {
-	"ImportPath": "github.com/simonswine/jenkins_docker_wrapper",
+	"ImportPath": "github.com/simonswine/docker_wrapper",
 	"GoVersion": "go1.4.2",
 	"Deps": [
 		{
 			"ImportPath": "github.com/Sirupsen/logrus",
 			"Comment": "v0.6.4-21-g6dcec6e",
 			"Rev": "6dcec6ed3bdf8559ac1696bc32d7dbd9aadaf5b6"
-		},
-		{
-			"ImportPath": "github.com/alecthomas/units",
-			"Rev": "6b4e7dc5e3143b85ea77909c72caf89416fc2915"
 		},
 		{
 			"ImportPath": "github.com/docker/docker/pkg/archive",
@@ -56,17 +52,24 @@
 			"Rev": "59b423db81e5894ca7460652f1b206fc72d85750"
 		},
 		{
-			"ImportPath": "github.com/simonswine/docker_wrapper",
-			"Rev": "11ae44c5e4ac53acb82d9bfc06ccb199ecd6af7b"
+			"ImportPath": "github.com/stretchr/objx",
+			"Rev": "cbeaeb16a013161a98496fad62933b1d21786672"
 		},
 		{
 			"ImportPath": "github.com/stretchr/testify/assert",
 			"Rev": "e4ec8152c15fc46bd5056ce65997a07c7d415325"
 		},
 		{
-			"ImportPath": "gopkg.in/alecthomas/kingpin.v1",
-			"Comment": "v1.3.6",
-			"Rev": "55a69a226d28a43b913720f5d765706d49c8fa9e"
+			"ImportPath": "github.com/stretchr/testify/mock",
+			"Rev": "e4ec8152c15fc46bd5056ce65997a07c7d415325"
+		},
+		{
+			"ImportPath": "github.com/stretchr/testify/require",
+			"Rev": "e4ec8152c15fc46bd5056ce65997a07c7d415325"
+		},
+		{
+			"ImportPath": "github.com/stretchr/testify/suite",
+			"Rev": "e4ec8152c15fc46bd5056ce65997a07c7d415325"
 		}
 	]
 }
