@@ -210,6 +210,9 @@ func build_environment(env []string) (output []string, err error) {
 	m["SSH_CONNECTION"] = build_environment_blacklist
 	m["LD_LIBRARY_PATH"] = build_environment_blacklist
 	m["PATH"] = build_environment_blacklist
+	m["NVM_DIR"] = build_environment_blacklist
+	m["NVM_NODEJS_ORG_MIRROR"] = build_environment_blacklist
+	m["LANG"] = build_environment_blacklist
 
 	// validations
 	m["USER"] = build_environment_validate_user
@@ -250,6 +253,9 @@ func build_environment(env []string) (output []string, err error) {
 		// add to output
 		output = append(output, fmt.Sprintf("%s=%s", key, value))
 	}
+
+	// add utf8 language env
+	output = append(output, "LANGs=C.UTF-8")
 	return output, err
 }
 
@@ -338,6 +344,9 @@ func initialize() error {
 		return err
 	}
 	config.environment = env
+	for i := range env {
+		log.Debugf("container env var: %s", env[i])
+	}
 
 	// add workspace to volumes
 	config.volumes = append(
