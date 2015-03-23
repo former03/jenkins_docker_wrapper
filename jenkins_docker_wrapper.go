@@ -254,8 +254,6 @@ func build_environment(env []string) (output []string, err error) {
 		output = append(output, fmt.Sprintf("%s=%s", key, value))
 	}
 
-	// add utf8 language env
-	output = append(output, "LANGs=C.UTF-8")
 	return output, err
 }
 
@@ -343,6 +341,10 @@ func initialize() error {
 	if err != nil {
 		return err
 	}
+
+	// add utf8 language env
+	env = append(env, "LANG=C.UTF-8")
+
 	config.environment = env
 	for i := range env {
 		log.Debugf("container env var: %s", env[i])
