@@ -521,5 +521,18 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// clean up container
+	err = dw.Stop()
+	if err != nil {
+		log.Warn(err)
+	}
+
+	// remove container
+	err = dw.Remove()
+	if err != nil {
+		log.Warn(err)
+	}
+
+	os.Exit(ret_val)
 
 }
