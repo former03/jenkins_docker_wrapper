@@ -120,83 +120,82 @@ func TestEnvironmentBuildUser(t *testing.T) {
 
 func TestEnvironmentBuildWorkspace(t *testing.T) {
 	valid_path := "/jenkins/workspace"
-	config.jenkins_workspace = valid_path
+	config.jenkins_home = "/jenkins"
 
 	// Validate workspace pwd directory
-	for _, key := range []string{"PWD", "WORKSPACE"} {
+	key := "WORKSPACE"
 
-		env, err := build_environment([]string{
+	env, err := build_environment([]string{
+		fmt.Sprintf("%s=%s/kunde1", key, valid_path),
+	})
+	assert.Equal(t, nil, err, "Do not return a error")
+	assert.Equal(
+		t,
+		[]string{
 			fmt.Sprintf("%s=%s/kunde1", key, valid_path),
-		})
-		assert.Equal(t, nil, err, "Do not return a error")
-		assert.Equal(
-			t,
-			[]string{
-				fmt.Sprintf("%s=%s/kunde1", key, valid_path),
-			},
-			env,
-			"Has to accept correct path",
-		)
+		},
+		env,
+		"Has to accept correct path",
+	)
 
-		env, err = build_environment([]string{
-			fmt.Sprintf("%s=%s/kunde1/../kunde2", key, valid_path),
-		})
-		assert.Equal(t, nil, err, "Do not return a error")
-		assert.Equal(
-			t,
-			[]string{
-				fmt.Sprintf("%s=%s/kunde2", key, valid_path),
-			},
-			env,
-			"Has to accept hacks with correct path",
-		)
+	env, err = build_environment([]string{
+		fmt.Sprintf("%s=%s/kunde1/../kunde2", key, valid_path),
+	})
+	assert.Equal(t, nil, err, "Do not return a error")
+	assert.Equal(
+		t,
+		[]string{
+			fmt.Sprintf("%s=%s/kunde2", key, valid_path),
+		},
+		env,
+		"Has to accept hacks with correct path",
+	)
 
-		env, err = build_environment([]string{
+	env, err = build_environment([]string{
+		fmt.Sprintf("%s=%s/kunde2/down", key, valid_path),
+	})
+	assert.Equal(t, nil, err, "Do not return a error")
+	assert.Equal(
+		t,
+		[]string{
 			fmt.Sprintf("%s=%s/kunde2/down", key, valid_path),
-		})
-		assert.Equal(t, nil, err, "Do not return a error")
-		assert.Equal(
-			t,
-			[]string{
-				fmt.Sprintf("%s=%s/kunde2/down", key, valid_path),
-			},
-			env,
-			"Has to accept correct path",
-		)
+		},
+		env,
+		"Has to accept correct path",
+	)
 
-		env, err = build_environment([]string{
-			fmt.Sprintf("%s=/jenkins/kunde1", key, valid_path),
-		})
-		assert.NotEqual(t, nil, err, "Do return a error")
-		assert.Equal(
-			t,
-			[]string{},
-			env,
-			"Error path has to be within the workspace",
-		)
+	env, err = build_environment([]string{
+		fmt.Sprintf("%s=/jenkins/kunde1", key, valid_path),
+	})
+	assert.NotEqual(t, nil, err, "Do return a error")
+	assert.Equal(
+		t,
+		[]string{},
+		env,
+		"Error path has to be within the workspace",
+	)
 
-		env, err = build_environment([]string{
-			fmt.Sprintf("%s=%s/kunde2/../../kunde1", key, valid_path),
-		})
-		assert.NotEqual(t, nil, err, "Do return a error")
-		assert.Equal(
-			t,
-			[]string{},
-			env,
-			"Error path has to be within the workspace",
-		)
+	env, err = build_environment([]string{
+		fmt.Sprintf("%s=%s/kunde2/../../kunde1", key, valid_path),
+	})
+	assert.NotEqual(t, nil, err, "Do return a error")
+	assert.Equal(
+		t,
+		[]string{},
+		env,
+		"Error path has to be within the workspace",
+	)
 
-		env, err = build_environment([]string{
-			fmt.Sprintf("%s=jenkins/kunde1", key, valid_path),
-		})
-		assert.NotEqual(t, nil, err, "Do return a error")
-		assert.Equal(
-			t,
-			[]string{},
-			env,
-			"Error path has to be absoulte",
-		)
-	}
+	env, err = build_environment([]string{
+		fmt.Sprintf("%s=jenkins/kunde1", key, valid_path),
+	})
+	assert.NotEqual(t, nil, err, "Do return a error")
+	assert.Equal(
+		t,
+		[]string{},
+		env,
+		"Error path has to be absoulte",
+	)
 }
 
 func TestEnvironmentBuildSshAuthSock(t *testing.T) {
@@ -214,7 +213,7 @@ func TestEnvironmentBuildSshAuthSock(t *testing.T) {
 		env,
 		"Error path has to be within the workspace",
 	)
-	assert.Equal(t, true, stringInSlice(value, config.files_to_copy), "Path is not copied to the container copy list")
+	assert.Equal(t, true, stringInSlice(value, config.tmp_files_to_move), "Path is not copied to the container copy list")
 
 	env, err = build_environment([]string{
 		fmt.Sprintf("%s=relative/%s", key, value),
