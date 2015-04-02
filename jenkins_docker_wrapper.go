@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	"github.com/danryan/go-group/os/group"
 	"github.com/simonswine/docker_wrapper"
 	"gopkg.in/alecthomas/kingpin.v1"
 	"io"
 	"io/ioutil"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -412,17 +414,25 @@ func init_container(dw *docker_wrapper.DockerWrapper) error {
 	ssh_dir_path := filepath.Join(jenkins_home_path, ".ssh")
 	ssh_known_hosts_path := filepath.Join(ssh_dir_path, "known_hosts")
 
-	gid := 1000
-	uid := 1000
-	user := "jenkins"
-	group := "jenkins"
+	username := config.jenkins_user
+	user_struct, err := user.Lookup(username)
+	if err != nil {
+		return err
+	}
+	uid_str := user_struct.Uid
+	gid_str := user_struct.Gid
+	group_struct, err := group.LookupGroupId(gid_str)
+	if err != nil {
+		return err
+	}
+	groupname := group_struct.Name
 
-	user_group := fmt.Sprintf("%s:%s", user, group)
-	uid_str := fmt.Sprintf("%d", uid)
-	gid_str := fmt.Sprintf("%d", gid)
+	log.Debugf("Detected user=%s (%s) group=%s (%s)", username, uid_str, groupname, gid_str)
 
-	// remove existing user
-	stdout, _, ret_val, _ := run_command(dw, []string{"getent", "passwd", gid_str})
+	user_group := fmt.Sprintf("%s:%s", username, groupname)
+
+	// remove existing uid
+	stdout, _, ret_val, _ := run_command(dw, []string{"getent", "passwd", uid_str})
 	if ret_val == 0 {
 		lines := strings.Split(strings.TrimSpace(stdout), "\n")
 		for i := range lines {
@@ -434,8 +444,17 @@ func init_container(dw *docker_wrapper.DockerWrapper) error {
 			}
 		}
 	}
+	// remove existing user
+	_, _, ret_val, _ = run_command(dw, []string{"getent", "passwd", username})
+	if ret_val == 0 {
+		log.Infof("Remove user '%s'", username)
+		_, _, _, err := run_command_expect(dw, []string{"userdel", username}, 0)
+		if err != nil {
+			return err
+		}
+	}
 
-	// remove existing group
+	// remove existing gid
 	stdout, _, ret_val, _ = run_command(dw, []string{"getent", "group", gid_str})
 	if ret_val == 0 {
 		lines := strings.Split(strings.TrimSpace(stdout), "\n")
@@ -449,14 +468,24 @@ func init_container(dw *docker_wrapper.DockerWrapper) error {
 		}
 	}
 
+	// remove existing group
+	_, _, ret_val, _ = run_command(dw, []string{"getent", "group", groupname})
+	if ret_val == 0 {
+		log.Infof("Remove group '%s'", groupname)
+		_, _, _, err := run_command_expect(dw, []string{"groupdel", groupname}, 0)
+		if err != nil {
+			return err
+		}
+	}
+
 	// add group
-	_, _, _, err := run_command_expect(dw, []string{"groupadd", "-g", gid_str, group}, 0)
+	_, _, _, err = run_command_expect(dw, []string{"groupadd", "-g", gid_str, groupname}, 0)
 	if err != nil {
 		return err
 	}
 
 	// add user
-	_, _, _, err = run_command_expect(dw, []string{"useradd", "-d", jenkins_home_path, "-g", gid_str, "-u", uid_str, user}, 0)
+	_, _, _, err = run_command_expect(dw, []string{"useradd", "-d", jenkins_home_path, "-g", gid_str, "-u", uid_str, username}, 0)
 	if err != nil {
 		return err
 	}
