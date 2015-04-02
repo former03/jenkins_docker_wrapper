@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
@@ -23,6 +24,13 @@ type Arguments struct {
 	no_rm        *bool   // Don't remove container after execution
 }
 
+type ConfigFile struct {
+	JenkinsUser  string `json:"jenkins_user"`
+	JenkinsHome  string `json:"jenkins_home"`
+	DefaultShell string `json:"default_shell"`
+}
+
+// TODO Rename to standard case 
 type Config struct {
 	my_args            []string // Arguments for me
 	container_args     []string // Arguments for the container shell
@@ -49,6 +57,33 @@ var args Arguments
 
 // ensure cleanup of all ressources
 func cleanup() {
+}
+
+func parse_config_file_io(r io.Reader) (cf *ConfigFile, err error) {
+	cf = &ConfigFile{}
+	b, err := ioutil.ReadAll(r)
+	if err != nil {
+		return
+	}
+	err = json.Unmarshal(b, &cf)
+	return
+}
+
+func parse_config_file(path string) (cf *ConfigFile, err error) {
+
+	// TODO test readable
+
+	// TODO test owner root
+
+	// TODO test only write rights for owner
+
+	// TODO open file
+	file, err := os.Open(path) // For read access.
+	if err != nil {
+		return nil, err
+	}
+
+	return parse_config_file_io(file)
 }
 
 // parse cli arguments
@@ -329,10 +364,34 @@ func initialize() error {
 	// set log level
 	log.SetLevel(log.DebugLevel)
 
-	// set default shell to bash
-	config.default_shell = "/bin/bash"
-	config.jenkins_user = "jenkins"
-	config.jenkins_home = "/jenkins"
+    // parse config file
+    config_file, err := parse_config_file("/etc/jenkins_docker_wrapper.conf")
+    if err != nil {
+        return err
+    }
+
+    // overwrite default config from config file
+    if config_file.DefaultShell != "" {
+	    config.default_shell = config_file.DefaultShell
+    } else {
+	    config.default_shell = "/bin/bash"
+    }
+    log.Debugf("Set DefaultShell to '%s'", config.default_shell)
+
+    if config_file.JenkinsUser != "" {
+        config.jenkins_user = config_file.JenkinsUser
+    } else {
+        config.jenkins_user = "jenkins"
+    }
+    log.Debugf("Set JenkinsUser to '%s'", config.jenkins_user)
+
+    if config_file.JenkinsHome != "" {
+        config.jenkins_home = config_file.JenkinsHome
+    } else {
+        config.jenkins_home = "/jenkins"
+    }
+    log.Debugf("Set JenkinsHome to '%s'", config.jenkins_home)
+
 
 	config.cleanup_containers = []string{}
 

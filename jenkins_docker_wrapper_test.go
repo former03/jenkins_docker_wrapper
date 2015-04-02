@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -14,6 +15,28 @@ func stringInSlice(a string, list []string) bool {
 		}
 	}
 	return false
+}
+
+func TestParseConfigFileIo(t *testing.T) {
+
+	config1 := "{}"
+	r := bytes.NewBufferString(config1)
+	cf, err := parse_config_file_io(r)
+
+	assert.Equal(t, nil, err, "Expect no error")
+	assert.Equal(t, "", cf.DefaultShell, "Expect element empty")
+	assert.Equal(t, "", cf.JenkinsUser, "Expect element empty")
+	assert.Equal(t, "", cf.JenkinsHome, "Expect element empty")
+
+	config2 := "{\"jenkins_user\":\"jenkins123\",\"jenkins_home\" : \"/var/lib/jenkins\",\"default_shell\" : \"/bin/sh\"}"
+	r = bytes.NewBufferString(config2)
+	cf, err = parse_config_file_io(r)
+
+	assert.Equal(t, nil, err, "Expect no error")
+	assert.Equal(t, "/bin/sh", cf.DefaultShell, "Expect element empty")
+	assert.Equal(t, "jenkins123", cf.JenkinsUser, "Expect element empty")
+	assert.Equal(t, "/var/lib/jenkins", cf.JenkinsHome, "Expect element empty")
+
 }
 
 // Tests new arguments with -- as seperator
