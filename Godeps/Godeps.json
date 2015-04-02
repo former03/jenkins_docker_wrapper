@@ -1,5 +1,5 @@
 {
-	"ImportPath": "github.com/simonswine/jenkins_docker_wrapper",
+	"ImportPath": "github.com/former03/jenkins_docker_wrapper",
 	"GoVersion": "go1.4.2",
 	"Deps": [
 		{
@@ -56,7 +56,7 @@
 			"Rev": "59b423db81e5894ca7460652f1b206fc72d85750"
 		},
 		{
-			"ImportPath": "github.com/simonswine/docker_wrapper",
+			"ImportPath": "github.com/former03/docker_wrapper",
 			"Rev": "11ae44c5e4ac53acb82d9bfc06ccb199ecd6af7b"
 		},
 		{
