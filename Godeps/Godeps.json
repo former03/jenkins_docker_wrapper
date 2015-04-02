@@ -12,6 +12,10 @@
 			"Rev": "6b4e7dc5e3143b85ea77909c72caf89416fc2915"
 		},
 		{
+			"ImportPath": "github.com/danryan/go-group/os/group",
+			"Rev": "32a2db60d0f96b09973202901d78c2e4ae37af0f"
+		},
+		{
 			"ImportPath": "github.com/docker/docker/pkg/archive",
 			"Comment": "v1.5.0",
 			"Rev": "a8a31eff10544860d2188dddabdee4d727545796"
@@ -52,12 +56,12 @@
 			"Rev": "a8a31eff10544860d2188dddabdee4d727545796"
 		},
 		{
-			"ImportPath": "github.com/fsouza/go-dockerclient",
-			"Rev": "59b423db81e5894ca7460652f1b206fc72d85750"
-		},
-		{
 			"ImportPath": "github.com/former03/docker_wrapper",
 			"Rev": "11ae44c5e4ac53acb82d9bfc06ccb199ecd6af7b"
+		},
+		{
+			"ImportPath": "github.com/fsouza/go-dockerclient",
+			"Rev": "59b423db81e5894ca7460652f1b206fc72d85750"
 		},
 		{
 			"ImportPath": "github.com/stretchr/testify/assert",
